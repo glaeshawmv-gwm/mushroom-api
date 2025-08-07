@@ -1,4 +1,5 @@
 from flask import Flask, request, jsonify
+from flask_cors import CORS  # <-- Add this line
 import joblib
 import cv2
 import numpy as np
@@ -14,11 +15,14 @@ model = joblib.load(MODEL_PATH)
 pca = joblib.load(PCA_PATH)
 
 app = Flask(__name__)
+CORS(app)  # <-- Enable CORS for cross-origin requests from Flutter
+
+# === Health Check Route ===
+@app.route('/')
+def index():
+    return 'API is up and running!', 200  # <-- Helpful for testing
 
 def extract_features(image):
-    """
-    Extract combined color histogram + HOG features and apply PCA.
-    """
     image = cv2.resize(image, IMAGE_SIZE)
 
     # Color histogram
@@ -33,8 +37,6 @@ def extract_features(image):
 
     # Combine and reshape
     combined = np.concatenate((hist, hog_feat)).reshape(1, -1)
-
-    # Apply PCA transform
     return pca.transform(combined)
 
 @app.route('/predict', methods=['POST'])
