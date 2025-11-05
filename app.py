@@ -1,5 +1,5 @@
 from flask import Flask, request, jsonify
-from flask_cors import CORS  # <-- Add this line
+from flask_cors import CORS
 import joblib
 import cv2
 import numpy as np
@@ -10,18 +10,23 @@ IMAGE_SIZE = (100, 100)
 MODEL_PATH = 'random_forest_model.pkl'
 PCA_PATH = 'pca.pkl'
 
-# === Load model and PCA ===
-model = joblib.load(MODEL_PATH)
-pca = joblib.load(PCA_PATH)
-
+# === Initialize Flask ===
 app = Flask(__name__)
-CORS(app)  # <-- Enable CORS for cross-origin requests from Flutter
+CORS(app)  # Enable CORS for cross-origin requests from Flutter
+
+# === Load model and PCA ===
+try:
+    model = joblib.load(MODEL_PATH)
+    pca = joblib.load(PCA_PATH)
+except Exception as e:
+    print("⚠️ Error loading model or PCA:", e)
 
 # === Health Check Route ===
 @app.route('/')
 def index():
-    return 'API is up and running!', 200  # <-- Helpful for testing
+    return jsonify({"message": "Mushroom Detection API is running successfully!"}), 200
 
+# === Feature Extraction ===
 def extract_features(image):
     image = cv2.resize(image, IMAGE_SIZE)
 
@@ -39,6 +44,7 @@ def extract_features(image):
     combined = np.concatenate((hist, hog_feat)).reshape(1, -1)
     return pca.transform(combined)
 
+# === Prediction Route ===
 @app.route('/predict', methods=['POST'])
 def predict():
     if 'image' not in request.files:
@@ -67,5 +73,9 @@ def predict():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+# === Run App ===
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+    # Render automatically uses PORT environment variable
+    import os
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host='0.0.0.0', port=port, debug=False)
