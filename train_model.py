@@ -10,7 +10,7 @@ from sklearn.model_selection import StratifiedKFold, cross_val_score, ParameterG
 from sklearn.metrics import classification_report, accuracy_score, precision_score, recall_score, f1_score
 from sklearn.decomposition import PCA
 from skimage.feature import hog, local_binary_pattern
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, LabelEncoder
 
 # ========== CONFIGURATION ==========
 SEED = 42
@@ -22,6 +22,8 @@ NON_MUSHROOM_DIR = 'non_mushroom_images'
 IMAGE_SIZE = (128, 128)
 MODEL_PATH = 'random_forest_model.pkl'
 PCA_PATH = 'pca.pkl'
+SCALER_PATH = 'scaler.pkl'
+LABEL_ENCODER_PATH = 'label_encoder.pkl'
 USE_PCA = True
 PCA_VARIANCE = 0.99  # retain 99% variance
 
@@ -125,20 +127,26 @@ def main():
     X, y = load_dataset()
     print(f"✅ Total samples: {len(X)}, Classes: {set(y)}")
 
+    # Label Encoding
+    le = LabelEncoder()
+    y_encoded = le.fit_transform(y)
+    joblib.dump(le, LABEL_ENCODER_PATH)
+
+    # Scale features
     scaler = StandardScaler()
-    X = scaler.fit_transform(X)
+    X_scaled = scaler.fit_transform(X)
+    joblib.dump(scaler, SCALER_PATH)
 
     # PCA
     if USE_PCA:
         print(f"📉 Applying PCA (retain {int(PCA_VARIANCE*100)}% variance)...")
         pca = PCA(n_components=PCA_VARIANCE, svd_solver='full', random_state=SEED)
-        X = pca.fit_transform(X)
+        X_scaled = pca.fit_transform(X_scaled)
         joblib.dump(pca, PCA_PATH)
-        print(f"✅ PCA reduced to {X.shape[1]} components")
+        print(f"✅ PCA reduced to {X_scaled.shape[1]} components")
 
-    # ========== Manual Grid Search with Live Progress ==========
+    # ========== Manual Grid Search ==========
     print("🔎 Running GridSearchCV manually (with live progress)...")
-
     param_grid = {
         'n_estimators': [400, 600, 800],
         'max_depth': [40, 60, 80],
@@ -156,7 +164,7 @@ def main():
 
     for i, params in enumerate(grid, start=1):
         model = RandomForestClassifier(**params, random_state=SEED, class_weight='balanced', n_jobs=-1)
-        scores = cross_val_score(model, X, y, cv=cv, n_jobs=-1)
+        scores = cross_val_score(model, X_scaled, y_encoded, cv=cv, n_jobs=-1)
         mean_score = scores.mean()
 
         if mean_score > best_score:
@@ -179,22 +187,20 @@ def main():
     # Train final model
     print("\n🧠 Training final model with best parameters...")
     best_model = RandomForestClassifier(**best_params, random_state=SEED, class_weight='balanced', n_jobs=-1)
-    best_model.fit(X, y)
-
-    # Evaluate
-    print("\n✅ Evaluating Final Model...")
-    y_pred = best_model.predict(X)
-    print("\n📋 Classification Report:")
-    print(classification_report(y, y_pred))
-
-    print("\n📈 Summary:")
-    print(f"Accuracy:  {accuracy_score(y, y_pred):.4f}")
-    print(f"Precision: {precision_score(y, y_pred, average='weighted'):.4f}")
-    print(f"Recall:    {recall_score(y, y_pred, average='weighted'):.4f}")
-    print(f"F1 Score:  {f1_score(y, y_pred, average='weighted'):.4f}")
-
+    best_model.fit(X_scaled, y_encoded)
     joblib.dump(best_model, MODEL_PATH)
     print(f"\n💾 Saved optimized model to '{MODEL_PATH}'")
+
+    # Evaluate
+    y_pred = best_model.predict(X_scaled)
+    print("\n📋 Classification Report:")
+    print(classification_report(y_encoded, y_pred, target_names=le.classes_))
+
+    print("\n📈 Summary:")
+    print(f"Accuracy:  {accuracy_score(y_encoded, y_pred):.4f}")
+    print(f"Precision: {precision_score(y_encoded, y_pred, average='weighted'):.4f}")
+    print(f"Recall:    {recall_score(y_encoded, y_pred, average='weighted'):.4f}")
+    print(f"F1 Score:  {f1_score(y_encoded, y_pred, average='weighted'):.4f}")
 
 
 if __name__ == "__main__":
